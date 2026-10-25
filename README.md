@@ -3,6 +3,9 @@
 A project for learning how to package a small Python API in Docker and run it
 with PostgreSQL through Docker Compose.
 
+**v0.1.0 — completed learning lab.** The API and database start together,
+tasks are stored in PostgreSQL, and task data survives container recreation.
+
 ## Finish line
 
 Run the API and PostgreSQL with `docker compose up --build`, create and list
@@ -10,13 +13,12 @@ tasks through the API, and show that data survives container recreation.
 
 ## Milestones
 
-1. **API and image:** build the image and get an HTTP 200 response from `/health`.
-2. **Compose and database:** run API and PostgreSQL together; add task creation and listing.
-3. **Persistence and handoff:** recreate containers without losing task data, document the demo, and publish the project on GitHub.
+- [x] **API and image:** build the image and get an HTTP 200 response from `/health`.
+- [x] **Compose and database:** run API and PostgreSQL together; add task creation and listing.
+- [x] **Persistence and handoff:** recreate containers without losing task data, document the demo, and publish the project on GitHub.
 
-Milestone 1 is complete. The milestone 2 implementation adds Compose,
-PostgreSQL, readiness checks, and task creation/listing. The remaining handoff
-is the learner's persistence demo and GitHub publication.
+The three acceptance criteria are complete. See [project summary](docs/project-summary.md)
+for learning outcomes and [changelog](CHANGELOG.md) for release scope.
 
 ## Requirements
 
@@ -34,17 +36,6 @@ is the learner's persistence demo and GitHub publication.
 - `app/db.py`: PostgreSQL connection and table creation.
 - `.env.example`: a template for local configuration; the real `.env` is ignored by Git.
 
-## Build
-
-Run from this project directory:
-
-```bash
-docker compose build api
-```
-
-The image uses Python 3.12, installs dependencies before copying application
-code to reuse the dependency layer, and runs the API as user 10001.
-
 ## Configure and run
 
 On a fresh clone, create `.env` from the example if it does not exist:
@@ -53,12 +44,9 @@ On a fresh clone, create `.env` from the example if it does not exist:
 if [ ! -f .env ]; then cp .env.example .env; fi
 ```
 
-Set a local password in `.env` before the first database start. The prepared
-workspace already has a generated local password; keep that existing file.
-PostgreSQL initialization uses these settings when its volume is first created.
-
-When switching from the milestone 1 standalone container, stop `delivery-api`
-with `docker stop delivery-api` to free local port 8000.
+Set a local password in `.env` before the first database start. Keep existing
+settings when reusing an initialized database volume. PostgreSQL initialization
+uses these settings when its volume is first created.
 
 ```bash
 docker compose up --build -d --wait
@@ -68,6 +56,10 @@ Compose starts PostgreSQL first and waits for its healthcheck before starting
 the API. `--wait` waits for both services to become healthy. The API is published
 on local loopback port 8000; PostgreSQL is reached as `db:5432` inside the
 Compose network. The database does not publish a host port.
+
+The Dockerfile uses Python 3.12, installs dependencies before copying application
+code to reuse the dependency layer, and runs the API as user 10001. To build
+without starting services, use `docker compose build api` after configuring `.env`.
 
 ## Inspect and call the API
 
@@ -115,15 +107,29 @@ docker compose down
 `down` removes this Compose project's containers and network while retaining
 the named database volume. Adding `--volumes` also deletes the stored data.
 
-The next demo is to create a task, run `docker compose down`, start again with
-`docker compose up -d --wait`, and confirm that `GET /tasks` still returns it.
+## Reproduce the persistence demo
+
+Create a task with the POST request above, then run:
+
+```bash
+docker compose down
+docker compose up -d --wait
+curl -i http://localhost:8000/tasks
+```
+
+The previously created task should retain its ID, title, and creation timestamp.
+This was confirmed in the manual demo on 2026-10-25.
 
 ## Scope of this project
 
 The deliverable is a working API, a database, a Compose setup, and a persistence
 demo. Kubernetes and cloud deployment belong to later projects.
 
-## Verification recorded for milestone 2
+This is a local learning application. Authentication, schema migration tooling,
+and a CI/CD pipeline are outside v0.1.0. Direct Python dependencies are pinned;
+transitive dependencies and container base images are not fully locked.
+
+## Verified behavior
 
 Checked in an isolated Compose project with disposable test data:
 
@@ -133,5 +139,5 @@ Checked in an isolated Compose project with disposable test data:
 - Both API and database containers were recreated, keeping the named volume.
 - The previously created task remained available after recreation.
 
-The isolated test resources were removed afterwards; the learner's standalone
-API and unrelated containers were not part of this test.
+The manual demo also confirmed both services healthy, successful task creation
+and listing, and preservation of the same task after `down` and `up`.
