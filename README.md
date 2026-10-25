@@ -14,13 +14,14 @@ tasks through the API, and show that data survives container recreation.
 2. **Compose and database:** run API and PostgreSQL together; add task creation and listing.
 3. **Persistence and handoff:** recreate containers without losing task data, document the demo, and publish the project on GitHub.
 
-Current stage: milestone 1. PostgreSQL and Compose configuration will be added
-in milestone 2.
+Milestone 1 is complete. The milestone 2 implementation adds Compose,
+PostgreSQL, readiness checks, and task creation/listing. The remaining handoff
+is the learner's persistence demo and GitHub publication.
 
 ## Requirements
 
 - Docker Engine
-- Docker Compose v2 for milestone 2
+- Docker Compose v2
 - `curl` for terminal requests
 
 ## Files to read first
@@ -29,50 +30,108 @@ in milestone 2.
 - `requirements.txt`: direct Python dependencies, pinned to checked versions.
 - `Dockerfile`: the instructions used to build the image.
 - `.dockerignore`: files excluded from the Docker build context.
+- `compose.yaml`: API and database services, readiness checks, and the database volume.
+- `app/db.py`: PostgreSQL connection and table creation.
+- `.env.example`: a template for local configuration; the real `.env` is ignored by Git.
 
 ## Build
 
 Run from this project directory:
 
 ```bash
-docker build -t docker-delivery-lab:dev .
+docker compose build api
 ```
 
 The image uses Python 3.12, installs dependencies before copying application
 code to reuse the dependency layer, and runs the API as user 10001.
 
-## Run
+## Configure and run
+
+On a fresh clone, create `.env` from the example if it does not exist:
 
 ```bash
-docker run --rm -d --name delivery-api -p 127.0.0.1:8000:8000 docker-delivery-lab:dev
+if [ ! -f .env ]; then cp .env.example .env; fi
 ```
 
-`--rm` removes this container after it stops. `-d` runs it in the background.
-`--name` gives it a readable name. The port mapping publishes container port
-8000 on the local machine's loopback port 8000.
+Set a local password in `.env` before the first database start. The prepared
+workspace already has a generated local password; keep that existing file.
+PostgreSQL initialization uses these settings when its volume is first created.
+
+When switching from the milestone 1 standalone container, stop `delivery-api`
+with `docker stop delivery-api` to free local port 8000.
+
+```bash
+docker compose up --build -d --wait
+```
+
+Compose starts PostgreSQL first and waits for its healthcheck before starting
+the API. `--wait` waits for both services to become healthy. The API is published
+on local loopback port 8000; PostgreSQL is reached as `db:5432` inside the
+Compose network. The database does not publish a host port.
 
 ## Inspect and call the API
 
 ```bash
-docker ps --filter name=delivery-api
+docker compose ps
 curl -i http://localhost:8000/health
-curl -i http://localhost:8000/
-docker logs delivery-api
+curl -i http://localhost:8000/ready
+docker compose logs api
 ```
 
 Expected health response: HTTP 200 and `{"status":"ok"}`.
 Interactive API documentation is available at `http://localhost:8000/docs`.
 
+`/health` reports that the API is running. `/ready` also checks a live database
+connection and returns HTTP 503 when the database cannot be reached.
+
+## Create and list tasks
+
+```bash
+curl -i -X POST http://localhost:8000/tasks \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Learn Docker Compose"}'
+
+curl -i http://localhost:8000/tasks
+```
+
+Creation returns HTTP 201 with the task ID, title, and creation time. Listing
+returns HTTP 200 and a JSON array of stored tasks. Titles are trimmed and must
+contain 1–200 characters; invalid request bodies return HTTP 422.
+
+## How the pieces fit together
+
+- `api` and `db` are service names on a Compose network. The API uses `db` as its database hostname.
+- `.env` supplies database settings without putting the local password in Git.
+- `depends_on` with `service_healthy` waits for the database readiness check.
+- The `postgres_data` named volume stores database files outside the container.
+- For this learning lab, the API creates the tasks table on startup. Schema migration tooling is outside this milestone.
+
 ## Stop
 
 ```bash
-docker stop delivery-api
+docker compose down
 ```
 
-The image remains available for the next run. A later exercise will use a
-named volume to preserve PostgreSQL data when containers are recreated.
+`down` removes this Compose project's containers and network while retaining
+the named database volume. Adding `--volumes` also deletes the stored data.
+
+The next demo is to create a task, run `docker compose down`, start again with
+`docker compose up -d --wait`, and confirm that `GET /tasks` still returns it.
 
 ## Scope of this project
 
 The deliverable is a working API, a database, a Compose setup, and a persistence
 demo. Kubernetes and cloud deployment belong to later projects.
+
+## Verification recorded for milestone 2
+
+Checked in an isolated Compose project with disposable test data:
+
+- API liveness and database readiness returned HTTP 200.
+- Creating a task returned HTTP 201; listing included the stored task.
+- A blank title returned HTTP 422.
+- Both API and database containers were recreated, keeping the named volume.
+- The previously created task remained available after recreation.
+
+The isolated test resources were removed afterwards; the learner's standalone
+API and unrelated containers were not part of this test.
